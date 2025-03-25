@@ -97,7 +97,7 @@ docker run -d --name minio-server \
   minio/minio server /data --console-address ":9001"
 ```
 
-### Run Video Transcoding Service in Background
+### Run Video Transcoding Service in background
 
 ```bash
 nohup uvicorn video_transcoding_main_server:app --host 0.0.0.0 --port 8001 &
