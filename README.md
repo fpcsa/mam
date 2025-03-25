@@ -1,8 +1,6 @@
 # Media Asset Management (MAM)
 Media Asset Management (MAM) solution that fully integrates both transcoding and Video-On-Demand features using OpenSource technologies
 
-Here's a GitHub-friendly `README.md` documentation for your FastAPI-based video transcoding and streaming services:
-
 ---
 
 # Video Transcoding and VoD FastAPI Services
