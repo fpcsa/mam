@@ -85,6 +85,18 @@ REDIS_DB=0
 docker run -d --name redis-server -p 6379:6379 redis:alpine
 ```
 
+### Start MinIO
+
+```bash
+docker run -d --name minio-server \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -v /mnt/minio-data:/data \
+  -e "MINIO_ROOT_USER=<your_username>" \
+  -e "MINIO_ROOT_PASSWORD=<your_password>" \
+  minio/minio server /data --console-address ":9001"
+```
+
 ### Run Video Transcoding Service in Background
 
 ```bash
