@@ -13,6 +13,8 @@ This repository provides two FastAPI-based microservices for handling video tran
 - `vod_main_server.py`: Serves signed HLS playlists with lazy transcoding support and Redis caching.
 - `redis_adapter.py`: Utility for managing Redis-based caching of playlists.
 
+![Architecture](media_MAM.png)
+
 ## Features
 
 - 🔁 **On-Demand Video Transcoding** (Remux or Re-encode to HLS format)
