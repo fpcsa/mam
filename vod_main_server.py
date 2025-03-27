@@ -1,12 +1,12 @@
-from fastapi import FastAPI, HTTPException, Header, status
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
 from datetime import timedelta
 from dotenv import load_dotenv
 import os, logging, time, requests
 from pathlib import Path
-from redis_adapter import get_cached_playlist, set_cached_playlist, invalidate_playlist_cache
+from redis_adapter import get_cached_playlist, set_cached_playlist, invalidate_playlist_cache, get_cached_thumbnail, set_cached_thumbnail, invalidate_thumbnail_cache
 
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -108,6 +108,7 @@ def serve_signed_playlist(video_name: str):
     # Build and cache the final playlist
     final_m3u8 = "\n".join(signed_lines)
     set_cached_playlist(video_name, final_m3u8)
+    log.info(f"cache:set for {video_name}")
 
     return PlainTextResponse(content=final_m3u8, media_type="application/vnd.apple.mpegurl")
 
@@ -166,12 +167,95 @@ def serve_signed_playlist(video_bucket: str, video_path: str):
 
     final_m3u8 = "\n".join(signed_lines)
     set_cached_playlist(video_name, final_m3u8)
+    log.info(f"cache:set for {video_name}")
+    
     return PlainTextResponse(content=final_m3u8, media_type="application/vnd.apple.mpegurl")
 
-@app.delete("/cache/{video_name}")
+@app.delete("/cache/video/{video_name}")
 def delete_cache(video_name: str, x_api_key: str = Header(None)):
     if x_api_key != TRANSCODE_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    invalidate_playlist_cache(video_name)
-    return {"message": f"Cache cleared for '{video_name}'"}
+    if invalidate_playlist_cache(video_name):
+        log.info(f"cache:delete for {video_name}")
+        return {"message": f"Cache cleared for '{video_name}'"}
+    else:
+        log.info(f"cache:error for {video_name}")
+        return {"message": f"Cache error for '{video_name}'"}
+
+@app.get("/asset/{bucket_name}/{img_path:path}/thumbnail")
+def serve_signed_thumbnail(bucket_name: str, img_path: str):
+    """
+    Serves a signed URL to an image thumbnail stored in MinIO,
+    with Redis caching to reduce MinIO access.
+    """
+    # Use the full path as the unique Redis key
+    img_redis_key = f"{bucket_name}/{img_path}"
+
+    # Try to get from cache
+    cached_url = get_cached_playlist(img_redis_key)
+    if cached_url:
+        log.info(f"cache:hit for {img_redis_key}")
+        return PlainTextResponse(content=cached_url, media_type="text/plain")
+
+    try:
+        # Generate signed URL
+        signed_url = client_minio.presigned_get_object(
+            bucket_name,
+            img_path,
+            expires=timedelta(hours=1)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Error getting signed thumbnail: {e}")
+
+    # Cache it
+    set_cached_playlist(img_redis_key, signed_url)
+
+    return PlainTextResponse(content=signed_url, media_type="text/plain")
+
+@app.get("/stream/{bucket_name}/{img_path:path}/thumbnail")
+def stream_thumbnail_image(bucket_name: str, img_path: str):
+    """
+    Streams the actual thumbnail image using a cached MinIO signed URL.
+    """
+    img_redis_key = f"{bucket_name}/{img_path}"
+
+    # Get signed URL from cache (or generate and cache it)
+    signed_url = get_cached_thumbnail(img_redis_key)
+    if not signed_url:
+        try:
+            signed_url = client_minio.presigned_get_object(
+                bucket_name,
+                img_path,
+                expires=timedelta(hours=1)
+            )
+            set_cached_thumbnail(img_redis_key, signed_url)
+            log.info(f"cache:set for {img_redis_key}")
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"Error generating signed URL: {e}")
+    else:
+        log.info(f"cache:hit for {img_redis_key}")
+
+    # Use the signed URL to fetch the image content
+    try:
+        r = requests.get(signed_url, stream=True)
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch image from MinIO: {e}")
+
+    # Detect MIME type or default to image/jpeg
+    content_type = r.headers.get("Content-Type", "image/jpeg")
+
+    return StreamingResponse(r.raw, media_type=content_type)
+
+@app.delete("/cache/img/{img_path:path}")
+def delete_cache(img_path: str, x_api_key: str = Header(None)):
+    if x_api_key != TRANSCODE_API_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    if invalidate_thumbnail_cache(img_path):
+        log.info(f"cache:delete for {img_path}")
+        return {"message": f"Cache cleared for '{img_path}'"}
+    else:
+        log.info(f"cache:error for {img_path}")
+        return {"message": f"Cache error for '{img_path}'"}
