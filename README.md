@@ -153,9 +153,21 @@ Returns signed `.m3u8` playlist with `.ts` segments signed for 1 hour (if alread
 
 Lazy-transcodes the requested video if `.m3u8` playlist is missing, then serves it with signed URLs.
 
-#### `DELETE /cache/{video_name}`
+#### `DELETE /cache/video/{video_name}`
 
 Invalidates Redis cache for the given playlist.
+
+#### `GET /asset/{bucket_name}/{img_path}/thumbnail`
+
+Serves a signed URL to an image thumbnail stored in MinIO. It hits Redis caching to reduce MinIO access
+
+#### `GET /stream/{bucket_name}/{img_path}/thumbnail`
+
+Streams the actual thumbnail image using a MinIO signed URL. It hits Redis caching to reduce MinIO access
+
+#### `DELETE /cache/img/{img_path}`
+
+Invalidates Redis cache for the img path.
 
 **Headers:**
 - `x-api-key: <TRANSCODE_API_KEY>`
@@ -176,6 +188,9 @@ The `redis_adapter.py` utility manages playlist caching with TTL:
 - `get_cached_playlist(video_name: str) -> str | None`
 - `set_cached_playlist(video_name: str, m3u8_text: str)`
 - `invalidate_playlist_cache(video_name: str)`
+- `get_cached_thumbnail(img_key: str) -> str | None`
+- `set_cached_thumbnail(img_key: str, url: str)`
+- `invalidate_thumbnail_cache(img_key: str)`
 
 ---
 
