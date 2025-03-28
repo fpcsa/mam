@@ -1,11 +1,11 @@
 # Media Asset Management (MAM)
-Media Asset Management (MAM) solution that fully integrates both transcoding and Video-On-Demand features using OpenSource technologies
+Media Asset Management (MAM) solution that fully integrates both transcoding and Image/Video-On-Demand features using OpenSource technologies
 
 ---
 
 # Video Transcoding and VoD FastAPI Services
 
-This repository provides two FastAPI-based microservices for handling video transcoding and streaming (VoD - Video on Demand). The system integrates with **MinIO** for object storage, **FFmpeg** for video conversion to HLS format, and **Redis** for playlist caching.
+This repository provides two FastAPI-based microservices for handling video transcoding and video/image streaming (VoD - Video on Demand). The system integrates with **MinIO** for object storage, **FFmpeg** for video conversion to HLS format, and **Redis** for playlist caching.
 
 ## Architecture Overview
 
