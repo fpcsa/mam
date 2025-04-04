@@ -157,6 +157,10 @@ Lazy-transcodes the requested video if `.m3u8` playlist is missing, then serves 
 
 Invalidates Redis cache for the given playlist.
 
+#### `DELETE /stream/{video_stream_bucket}/{video_path}/playlist.m3u8`
+
+Deletes the video HLS stream folder and automatically invalidates cache to avoid synchronization issues
+
 #### `GET /asset/{bucket_name}/{img_path}/thumbnail`
 
 Serves a signed URL to an image thumbnail stored in MinIO. It hits Redis caching to reduce MinIO access
