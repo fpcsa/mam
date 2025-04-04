@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
+from minio.deleteobjects import DeleteObject
 from datetime import timedelta
 from dotenv import load_dotenv
 import os, logging, time, requests
@@ -34,7 +35,7 @@ TRANSCODE_API_KEY = os.getenv("TRANSCODE_API_KEY")
 TRANSCODE_API_URL = os.getenv("TRANSCODE_API_URL")
 
 
-def auto_transcode(video_bucket: str, video_name: str) -> bool:
+def auto_transcode(video_bucket: str, video_path: str, reencode: bool = False) -> bool:
     """
     To allow "lazy-transcoding" or "on-demand processing"
     Useful to do transcoding if a video requested is not already transcoded
@@ -42,8 +43,8 @@ def auto_transcode(video_bucket: str, video_name: str) -> bool:
     try:
         payload = {
             "asset_bucket": video_bucket,
-            "asset_object": f"{video_name}.mp4",
-            "reencode": False
+            "asset_object": video_path,
+            "reencode": reencode
         }
         headers = {"x-api-key": TRANSCODE_API_KEY}
         r = requests.post(TRANSCODE_API_URL, json=payload, headers=headers)
@@ -57,10 +58,13 @@ def auto_transcode(video_bucket: str, video_name: str) -> bool:
 app = FastAPI()
 
 # Allow API to be called from Web App
-origins = ['null']         
+# origins = ['null']
+
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -113,7 +117,7 @@ def serve_signed_playlist(video_name: str):
     return PlainTextResponse(content=final_m3u8, media_type="application/vnd.apple.mpegurl")
 
 @app.get("/stream/{video_bucket}/{video_path:path}/playlist.m3u8")
-def serve_signed_playlist(video_bucket: str, video_path: str):
+def serve_signed_playlist(video_bucket: str, video_path: str, reencode: bool = Query(False, description="Whether to re-encode the video to H.264 + AAC")):
     """
     Given video_bucket and video_path
     If any, gets .m3u8 playlist file from a specific bucket in MinIO
@@ -135,9 +139,12 @@ def serve_signed_playlist(video_bucket: str, video_path: str):
     except Exception:
         log.warning(f"Playlist missing, triggering lazy transcode for {video_path}")
         try:
-            if not auto_transcode(video_bucket, video_path):
+            if not auto_transcode(video_bucket, video_path, reencode):
                 raise HTTPException(status_code=500, detail="Auto-transcoding failed")
 
+            # Poll MinIO for the .m3u8 playlist file for up to 10 seconds,
+            # waiting for the transcoding process to finish and write the file.
+            # If the file isn't available after 10 attempts, raise a 504 error.
             for _ in range(10):
                 try:
                     response = client_minio.get_object(MINIO_BUCKET_VOD, playlist_key)
@@ -182,6 +189,67 @@ def delete_cache_video(video_name: str, x_api_key: str = Header(None)):
     else:
         log.info(f"cache:error for {video_name}")
         return {"message": f"Cache error for '{video_name}'"}
+
+@app.delete("/stream/{video_bucket}/{video_path:path}/playlist.m3u8")
+def delete_stream_video(video_bucket: str, video_path: str, x_api_key: str = Header(None)):
+    if x_api_key != TRANSCODE_API_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    try:
+        video_name = Path(video_path).stem
+        playlist_folder = f"{video_name}"
+
+        # Invalidate cache
+        if invalidate_playlist_cache(video_name):
+            log.info(f"cache:delete for {video_name}")
+            cache_response = {"message": f"Cache cleared for '{video_name}'"}
+        else:
+            log.info(f"cache:error for {video_name}")
+            cache_response = {"message": f"Cache error for '{video_name}'"}
+
+        # List all objects under the playlist folder
+        objects_to_delete = [
+            obj.object_name
+            for obj in client_minio.list_objects(video_bucket, prefix=playlist_folder, recursive=True)
+        ]
+
+        if not objects_to_delete:
+            raise HTTPException(status_code=404, detail=f"No files found in '{video_bucket}/{playlist_folder}'")
+
+        # Convert object names to DeleteObject instances
+        delete_object_list = [DeleteObject(obj_name) for obj_name in objects_to_delete]
+
+        # Perform deletion
+        delete_result = client_minio.remove_objects(
+            bucket_name=video_bucket,
+            delete_object_list=delete_object_list
+        )
+
+        # Collect any deletion errors
+        errors = []
+        for del_err in delete_result:
+            errors.append(f"{del_err.object_name}: {del_err.error}")
+
+        if errors:
+            log.error(f"Deletion errors in MinIO: {errors}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete one or more files: {errors}"
+            )
+
+        log.info(f"stream:deleted {playlist_folder} in {video_bucket}")
+
+        return {
+            "delete_message": f"Stream '{video_bucket}/{playlist_folder}' deleted",
+            "cache_message": cache_response["message"]
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        log.error(f"stream:delete error for {video_bucket}/{video_path}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Exception: {str(e)}")
+
 
 @app.get("/asset/{bucket_name}/{img_path:path}/thumbnail")
 def serve_signed_thumbnail(bucket_name: str, img_path: str):
