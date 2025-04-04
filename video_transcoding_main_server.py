@@ -96,6 +96,7 @@ def convert_to_hls(input_file: Path, output_dir: Path, reencode: bool = False):
     try:
         if reencode:
             log.info("Re-encoding to H.264 + AAC...")
+            """
             stream = (
                 ffmpeg
                 .input(str(input_file))
@@ -111,6 +112,23 @@ def convert_to_hls(input_file: Path, output_dir: Path, reencode: bool = False):
                     b_a='128k'
                 )
             )
+            """
+            stream = (
+                ffmpeg
+                .input(str(input_file))
+                .output(
+                    str(output_path),
+                    format='hls',
+                    hls_time=10,
+                    hls_list_size=0,
+                    vcodec='libx264',
+                    preset='veryfast',
+                    crf=23,
+                    acodec='aac',
+                    **{'b:a': '128k'}
+                )
+            )
+
         else:
             log.info("Remuxing without re-encoding...")
             stream = (
@@ -127,13 +145,14 @@ def convert_to_hls(input_file: Path, output_dir: Path, reencode: bool = False):
             )
 
         # Run the stream using the bundled ffmpeg binary
+        # ffmpeg.run(stream, cmd=ffmpeg_exec, capture_stdout=True, capture_stderr=True) # To avoid logging transcoding output
         ffmpeg.run(stream, cmd=ffmpeg_exec)
         log.info("FFmpeg conversion complete.")
 
     except ffmpeg.Error as e:
-        log.error(f"FFmpeg failed:\n{e.stderr.decode()}")
-        raise RuntimeError(f"FFmpeg error: {e.stderr.decode()}")
-
+        err_msg = e.stderr.decode() if e.stderr else str(e)
+        log.error(f"FFmpeg failed:\n{err_msg}")
+        raise RuntimeError(f"FFmpeg error: {err_msg}")
 
 def upload_file(local_file: Path, bucket_name: str, object_name: str):
     """
