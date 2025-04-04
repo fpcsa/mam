@@ -172,7 +172,7 @@ def serve_signed_playlist(video_bucket: str, video_path: str):
     return PlainTextResponse(content=final_m3u8, media_type="application/vnd.apple.mpegurl")
 
 @app.delete("/cache/video/{video_name}")
-def delete_cache(video_name: str, x_api_key: str = Header(None)):
+def delete_cache_video(video_name: str, x_api_key: str = Header(None)):
     if x_api_key != TRANSCODE_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
@@ -249,7 +249,7 @@ def stream_thumbnail_image(bucket_name: str, img_path: str):
     return StreamingResponse(r.raw, media_type=content_type)
 
 @app.delete("/cache/img/{img_path:path}")
-def delete_cache(img_path: str, x_api_key: str = Header(None)):
+def delete_cache_img(img_path: str, x_api_key: str = Header(None)):
     if x_api_key != TRANSCODE_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
     
