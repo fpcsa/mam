@@ -2,6 +2,13 @@
 Media Asset Management (MAM) solution that fully integrates both transcoding and Image/Video-On-Demand features using OpenSource technologies
 
 ---
+**!!!IMPORTANT!!!**
+
+This is an old repository for the Media Asset Management solution. This one rely solely on FastAPI servers and single separated docker images for MinIO and Redis.
+There is a new repository which is an all-in-one solution which fully integrates everything in a single ```docker-compose``` for the Media Asset Management solution.
+So it's highly suggested to pull this repository ```https://github.com/fpcsa/mam``` instead of this one which will not be maintained anymore.
+
+---
 
 # Video Transcoding and VoD FastAPI Services
 
